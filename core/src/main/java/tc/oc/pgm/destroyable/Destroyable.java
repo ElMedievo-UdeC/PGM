@@ -330,6 +330,9 @@ public class Destroyable extends TouchableGoal<DestroyableFactory>
         new DestroyableHealthChange(oldState, newState, player, deltaHealth);
     this.events.add(changeInfo);
 
+    this.match.callEvent(new DestroyableHealthChangeEvent(this.getMatch(), this, changeInfo));
+    this.match.callEvent(new GoalStatusChangeEvent(this.getMatch(), this));
+
     if (deltaHealth < 0) {
       touch(player);
 
@@ -362,9 +365,6 @@ public class Destroyable extends TouchableGoal<DestroyableFactory>
         }
       }
     }
-
-    this.match.callEvent(new DestroyableHealthChangeEvent(this.getMatch(), this, changeInfo));
-    this.match.callEvent(new GoalStatusChangeEvent(this.getMatch(), this));
 
     if (this.isDestroyed()) {
       this.match.callEvent(new DestroyableDestroyedEvent(this.match, this));
