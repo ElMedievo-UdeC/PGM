@@ -27,8 +27,6 @@ import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.material.MaterialData;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scoreboard.NameTagVisibility;
-import tc.oc.pgm.util.component.Component;
-import tc.oc.pgm.util.component.types.PersonalizedText;
 import tc.oc.pgm.util.reflect.ReflectionUtils;
 
 public interface NMSHacks {
@@ -62,10 +60,10 @@ public interface NMSHacks {
       PacketPlayOutPlayerInfo packet,
       UUID uuid,
       String name,
-      @Nullable BaseComponent displayName,
       GameMode gamemode,
       int ping,
-      @Nullable Skin skin) {
+      @Nullable Skin skin,
+      @Nullable BaseComponent... displayName) {
     GameProfile profile = new GameProfile(uuid, name);
     if (skin != null) {
       for (Map.Entry<String, Collection<Property>> entry :
@@ -79,18 +77,19 @@ public interface NMSHacks {
             ping,
             gamemode == null ? null : WorldSettings.EnumGamemode.getById(gamemode.getValue()),
             null); // ELECTROID
-    data.displayName = displayName == null ? null : new BaseComponent[] {displayName};
+    data.displayName = displayName == null || displayName.length == 0 ? null : displayName;
     return data;
   }
 
   static PacketPlayOutPlayerInfo.PlayerInfoData playerListPacketData(
-      PacketPlayOutPlayerInfo packet, UUID uuid, BaseComponent displayName) {
-    return playerListPacketData(packet, uuid, null, displayName, null, 0, null);
+      PacketPlayOutPlayerInfo packet, UUID uuid, BaseComponent... displayName) {
+    return playerListPacketData(
+        packet, uuid, uuid.toString().substring(0, 16), null, 0, null, displayName);
   }
 
   static PacketPlayOutPlayerInfo.PlayerInfoData playerListPacketData(
       PacketPlayOutPlayerInfo packet, UUID uuid) {
-    return playerListPacketData(packet, uuid, null, null, null, 0, null);
+    return playerListPacketData(packet, uuid, null, null, 0, null);
   }
 
   static Packet teamPacket(
@@ -144,6 +143,25 @@ public interface NMSHacks {
 
   static Packet teamRemovePacket(String name) {
     return teamPacket(1, name, null, null, null, false, false, null, Lists.<String>newArrayList());
+  }
+
+  static Packet teamUpdatePacket(
+      String name,
+      String displayName,
+      String prefix,
+      String suffix,
+      boolean friendlyFire,
+      boolean seeFriendlyInvisibles) {
+    return teamPacket(
+        2,
+        name,
+        displayName,
+        prefix,
+        suffix,
+        friendlyFire,
+        seeFriendlyInvisibles,
+        NameTagVisibility.ALWAYS,
+        Lists.newArrayList());
   }
 
   static Packet teamJoinPacket(String name, Collection<String> players) {
@@ -372,16 +390,6 @@ public interface NMSHacks {
     PacketPlayOutChat packet = new PacketPlayOutChat(null, (byte) position);
     packet.components = message;
     sendPacket(player, packet);
-  }
-
-  // Only legacy formatting actually works, even though the packet uses components.
-  // If this is ever fixed, the methods below can be changed to pass the components through.
-  static void sendHotbarMessage(Player player, String message) {
-    sendMessage(player, new BaseComponent[] {new PersonalizedText(message).render(player)}, 2);
-  }
-
-  static void sendHotbarMessage(Player player, Component message) {
-    sendHotbarMessage(player, message.toLegacyText());
   }
 
   static void showBorderWarning(Player player, boolean show) {
