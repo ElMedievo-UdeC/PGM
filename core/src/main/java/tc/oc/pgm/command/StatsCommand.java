@@ -16,7 +16,7 @@ import tc.oc.pgm.util.text.TextFormatter;
 public final class StatsCommand {
 
   @Command(
-      aliases = {"stats"},
+      aliases = {"matchstats", "mstats"},
       desc = "Show your stats for the match")
   public void stats(Audience audience, CommandSender sender, MatchPlayer player, Match match) {
     if (player.getSettings().getValue(SettingKey.STATS).equals(SettingValue.STATS_ON)) {
