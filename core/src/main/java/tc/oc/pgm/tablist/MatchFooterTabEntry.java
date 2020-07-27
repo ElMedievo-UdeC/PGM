@@ -63,7 +63,8 @@ public class MatchFooterTabEntry extends DynamicTabEntry {
     content
         .append(TranslatableComponent.of("match.info.time", TextColor.GRAY))
         .append(": ", TextColor.GRAY)
-        .append(TimeUtils.formatDuration(match.getDuration()),
+        .append(
+            TimeUtils.formatDuration(match.getDuration()),
             this.match.isRunning() ? TextColor.GREEN : TextColor.GOLD);
 
     return TextTranslations.toBaseComponent(

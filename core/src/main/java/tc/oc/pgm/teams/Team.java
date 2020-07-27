@@ -184,7 +184,8 @@ public class Team extends SimpleParty implements Competitor, Feature<TeamFactory
   @Override
   public Component getChatPrefix() {
     if (chatPrefix == null) {
-      this.chatPrefix = TextComponent.of("(" + getShortName() + ") ", TextFormatter.convert(getColor()));
+      this.chatPrefix =
+          TextComponent.of("[" + getShortName() + "] ", TextFormatter.convert(getColor()));
     }
     return chatPrefix;
   }
