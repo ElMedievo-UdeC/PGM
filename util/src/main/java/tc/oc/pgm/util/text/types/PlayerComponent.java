@@ -1,5 +1,7 @@
 package tc.oc.pgm.util.text.types;
 
+import com.google.common.collect.Lists;
+import java.util.List;
 import java.util.UUID;
 import javax.annotation.Nullable;
 import net.kyori.text.Component;
@@ -10,6 +12,7 @@ import net.kyori.text.event.HoverEvent;
 import net.kyori.text.event.HoverEvent.Action;
 import net.kyori.text.format.TextColor;
 import net.kyori.text.format.TextDecoration;
+import net.kyori.text.format.TextFormat;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
@@ -104,21 +107,23 @@ public interface PlayerComponent {
     String displayName = player.getDisplayName();
     char colorChar = displayName.charAt((displayName.indexOf(player.getName()) - 1));
     TextColor color = TextFormatter.convert(ChatColor.getByChar(colorChar));
-    return TextComponent.builder().append(player.getName()).color(color);
+    return TextComponent.builder(player.getName(), color);
   }
 
   // Color, flair & teleport
   static TextComponent.Builder formatFancy(Player player) {
     TextComponent.Builder prefix = getPrefixComponent(player);
     TextComponent.Builder colorName = formatColor(player);
+    TextComponent.Builder suffix = getSuffixComponent(player);
 
-    return formatTeleport(prefix.append(colorName), player.getName());
+    return formatTeleport(prefix.append(colorName).append(suffix), player.getName());
   }
 
   // Color, flair, death status, and vanish
   static TextComponent.Builder formatTab(Player player, @Nullable Player viewer) {
     TextComponent.Builder prefix = getPrefixComponent(player);
     TextComponent.Builder colorName = formatColor(player);
+    TextComponent.Builder suffix = getSuffixComponent(player);
 
     if (isDead(player)) {
       colorName.color(TextColor.DARK_GRAY);
@@ -132,13 +137,14 @@ public interface PlayerComponent {
       colorName.decoration(TextDecoration.BOLD, true);
     }
 
-    return prefix.append(colorName);
+    return prefix.append(colorName).append(suffix);
   }
 
   // Color, flair, and vanish
   static TextComponent.Builder formatLegacyTab(Player player, @Nullable Player viewer) {
     TextComponent.Builder prefix = getPrefixComponent(player);
     TextComponent.Builder colorName = formatColor(player);
+    TextComponent.Builder suffix = getSuffixComponent(player);
 
     if (isVanished(player)) {
       colorName = formatVanished(colorName);
@@ -148,19 +154,20 @@ public interface PlayerComponent {
       colorName.decoration(TextDecoration.BOLD, true);
     }
 
-    return prefix.append(colorName);
+    return prefix.append(colorName).append(suffix);
   }
 
   // Color and flair with optional vanish
   static TextComponent.Builder formatConcise(Player player, boolean vanish) {
     TextComponent.Builder prefix = getPrefixComponent(player);
     TextComponent.Builder colorName = formatColor(player);
+    TextComponent.Builder suffix = getSuffixComponent(player);
 
     if (isVanished(player) && vanish) {
       colorName = formatVanished(colorName);
     }
 
-    return prefix.append(colorName);
+    return prefix.append(colorName).append(suffix);
   }
 
   // Color, flair, vanished, and teleport
@@ -178,26 +185,51 @@ public interface PlayerComponent {
     String realName = player.getName();
     String displayName = player.getDisplayName();
     String prefix = displayName.substring(0, displayName.indexOf(realName) - 2);
+    return stringToComponent(prefix);
+  }
 
-    TextComponent.Builder prefixComponent = TextComponent.builder();
+  /**
+   * Get the player's suffix as a {@link Component}
+   *
+   * @param player The player
+   * @return a component with a player's prefix
+   */
+  static TextComponent.Builder getSuffixComponent(Player player) {
+    String[] parts = player.getDisplayName().split(player.getName());
+    if (parts.length != 2) return TextComponent.builder();
+    return stringToComponent(parts[1]);
+  }
+
+  static TextComponent.Builder stringToComponent(String str) {
+    TextComponent.Builder component = TextComponent.builder();
     boolean isColor = false;
-    TextColor color = null;
-    for (int i = 0; i < prefix.length(); i++) {
-      if (prefix.charAt(i) == ChatColor.COLOR_CHAR) {
+    TextFormat color = null;
+    List<TextFormat> decorations = Lists.newArrayList();
+    for (int i = 0; i < str.length(); i++) {
+      if (str.charAt(i) == ChatColor.COLOR_CHAR) {
         isColor = true;
         continue;
       }
-
       if (isColor) {
-        color = TextFormatter.convert(ChatColor.getByChar(prefix.charAt(i)));
+        TextFormat formatting = TextFormatter.convertFormat(ChatColor.getByChar(str.charAt(i)));
+        if (formatting instanceof TextColor) {
+          color = formatting;
+          decorations.clear();
+        } else {
+          decorations.add(formatting);
+        }
         isColor = false;
       } else {
-        prefixComponent.append(
-            String.valueOf(prefix.charAt(i)), color != null ? color : TextColor.WHITE);
+        TextComponent part =
+            TextComponent.of(
+                String.valueOf(str.charAt(i)),
+                (color != null ? TextColor.class.cast(color) : TextColor.WHITE));
+        for (TextFormat decoration : decorations)
+          part = part.decoration(TextDecoration.class.cast(decoration), true);
+        component.append(part);
       }
     }
-
-    return prefixComponent;
+    return component;
   }
 
   // Format component to have teleport click/hover

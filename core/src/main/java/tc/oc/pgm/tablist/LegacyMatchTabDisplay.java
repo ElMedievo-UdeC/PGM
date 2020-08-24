@@ -18,8 +18,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerLocaleChangeEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.Plugin;
 import tc.oc.pgm.api.PGM;
 import tc.oc.pgm.api.Permissions;
+import tc.oc.pgm.api.event.NameDecorationChangeEvent;
 import tc.oc.pgm.api.map.MapInfo;
 import tc.oc.pgm.api.match.Match;
 import tc.oc.pgm.api.party.Competitor;
@@ -61,12 +63,13 @@ public class LegacyMatchTabDisplay implements Listener {
   // False: use a full column for each team
   // For multi match support, this should be saved per-match
   private boolean compact;
+  private Match match;
 
-  public LegacyMatchTabDisplay(PGM pgm) {
-    this.tabDisplay = new TabDisplay(pgm, WIDTH);
+  public LegacyMatchTabDisplay(Plugin plugin) {
+    this.tabDisplay = new TabDisplay(plugin, WIDTH);
 
     this.timeUpdateTask =
-        pgm.getExecutor().scheduleWithFixedDelay(this::renderTime, 0, 1, TimeUnit.SECONDS);
+        PGM.get().getExecutor().scheduleWithFixedDelay(this::renderTime, 0, 1, TimeUnit.SECONDS);
   }
 
   public void disable() {
@@ -84,8 +87,26 @@ public class LegacyMatchTabDisplay implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onPlayerJoin(PlayerJoinEvent event) {
-    if (ViaUtils.getProtocolVersion(event.getPlayer()) > ViaUtils.VERSION_1_7) return;
-    this.tabDisplay.addViewer(event.getPlayer());
+    if (ViaUtils.isReady(event.getPlayer())) tryEnable(event.getPlayer());
+    else {
+      // Player connection hasn't been setup yet, try next tick
+      PGM.get()
+          .getExecutor()
+          .schedule(() -> tryEnable(event.getPlayer()), 50, TimeUnit.MILLISECONDS);
+    }
+  }
+
+  /**
+   * Method that will try to enable the display for this player. This can only be done after the
+   * player has been successfully injected by via version, if done earlier, it results in 1.7
+   * clients sometimes not getting the 1.7 tab
+   *
+   * @param player The player to enable the display for
+   */
+  private void tryEnable(Player player) {
+    if (!player.isOnline()) return;
+    if (ViaUtils.getProtocolVersion(player) >= ViaUtils.VERSION_1_8) return;
+    this.tabDisplay.addViewer(player);
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -97,6 +118,7 @@ public class LegacyMatchTabDisplay implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onPlayerJoinMatch(final PlayerJoinMatchEvent event) {
+    if (event.getMatch() != null) this.match = event.getMatch();
     this.deferredRender();
   }
 
@@ -115,8 +137,13 @@ public class LegacyMatchTabDisplay implements Listener {
     this.deferredRender();
   }
 
-  @EventHandler(priority = EventPriority.MONITOR)
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onPlayerVanish(PlayerVanishEvent event) {
+    this.deferredRender();
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onPlayerNameChange(NameDecorationChangeEvent event) {
     this.deferredRender();
   }
 
@@ -139,16 +166,11 @@ public class LegacyMatchTabDisplay implements Listener {
 
   /** Re-render the whole tab for all players using this display */
   private void render() {
-    boolean checkedCompact = false;
+    checkCompactMode(this.match);
     for (Player viewer : tabDisplay.getViewers()) {
       MatchPlayer matchPlayer = PGM.get().getMatchManager().getPlayer(viewer);
       if (matchPlayer == null) continue; // Player isn't in a match
 
-      // Attempt to toggle compact mode only once, for whatever the first match found is
-      if (!checkedCompact) {
-        checkCompactMode(matchPlayer.getMatch());
-        checkedCompact = true;
-      }
       render(matchPlayer);
     }
     deferredRenderTask = null;
@@ -170,7 +192,7 @@ public class LegacyMatchTabDisplay implements Listener {
   }
 
   private void render(MatchPlayer viewer) {
-    if (viewer.getProtocolVersion() > ViaUtils.VERSION_1_7) return;
+    if (!viewer.isLegacy()) return;
 
     Player bukkit = viewer.getBukkit();
     MapInfo mapInfo = viewer.getMatch().getMap();
@@ -186,6 +208,7 @@ public class LegacyMatchTabDisplay implements Listener {
     // If there is exactly one map author, show their name in the top middle slot.
     // Multiple names will surely not fit, so showing none of them is the only fair thing.
     if (mapInfo.getAuthors().size() == 1) {
+      String author = mapInfo.getAuthors().iterator().next().getNameLegacy();
       this.tabDisplay.set(
           bukkit,
           1,
@@ -194,8 +217,10 @@ public class LegacyMatchTabDisplay implements Listener {
               TranslatableComponent.of(
                   "misc.by",
                   TextColor.DARK_GRAY,
-                  TextComponent.of(
-                      mapInfo.getAuthors().iterator().next().getNameLegacy(), TextColor.GRAY)),
+                  (author == null)
+                      ? TranslatableComponent.of(
+                          "misc.unknown", TextColor.GRAY, TextDecoration.ITALIC)
+                      : TextComponent.of(author, TextColor.GRAY)),
               bukkit));
     } else {
       this.tabDisplay.set(
@@ -360,15 +385,10 @@ public class LegacyMatchTabDisplay implements Listener {
     }
   }
 
-  private boolean renderPlayerName(MatchPlayer viewer, MatchPlayer player, int x, int y) {
+  protected boolean renderPlayerName(MatchPlayer viewer, MatchPlayer player, int x, int y) {
     if (!isVisible(player, viewer)) return false;
-    this.tabDisplay.set(
-        viewer.getBukkit(),
-        x,
-        y,
-        TextTranslations.translateLegacy(
-            PlayerComponent.of(player.getBukkit(), NameStyle.LEGACY_TAB, viewer.getBukkit()),
-            viewer.getBukkit()));
+
+    this.tabDisplay.set(viewer.getBukkit(), x, y, getPlayerName(viewer, player));
     return true;
   }
 
@@ -381,9 +401,20 @@ public class LegacyMatchTabDisplay implements Listener {
     return match.getModule(FreeForAllMatchModule.class) != null;
   }
 
-  private boolean renderTeamName(MatchPlayer viewer, Party party, int x, int y) {
+  protected boolean renderTeamName(MatchPlayer viewer, Party party, int x, int y) {
     if (party instanceof Tribute) return false; // Avoid rendering FFA
 
+    this.tabDisplay.set(viewer.getBukkit(), x, y, getTeamName(viewer, party));
+    return true;
+  }
+
+  protected String getPlayerName(MatchPlayer viewer, MatchPlayer player) {
+    return TextTranslations.translateLegacy(
+        PlayerComponent.of(player.getBukkit(), NameStyle.LEGACY_TAB, viewer.getBukkit()),
+        viewer.getBukkit());
+  }
+
+  protected String getTeamName(MatchPlayer viewer, Party party) {
     String playerCount =
         ChatColor.WHITE.toString()
             + party.getPlayers().stream().filter(pl -> isVisible(pl, viewer)).count();
@@ -395,11 +426,6 @@ public class LegacyMatchTabDisplay implements Listener {
     if (name.toLowerCase().endsWith(" team")) {
       name = name.substring(0, name.length() - " team".length());
     }
-    this.tabDisplay.set(
-        viewer.getBukkit(),
-        x,
-        y,
-        playerCount + " " + party.getColor().toString() + ChatColor.BOLD + name);
-    return true;
+    return playerCount + " " + party.getColor().toString() + ChatColor.BOLD + name;
   }
 }

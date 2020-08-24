@@ -2,6 +2,7 @@ package tc.oc.pgm.flag;
 
 import com.google.common.collect.ImmutableSet;
 import java.util.Iterator;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import javax.annotation.Nullable;
@@ -44,6 +45,7 @@ import tc.oc.pgm.flag.state.BaseState;
 import tc.oc.pgm.flag.state.Captured;
 import tc.oc.pgm.flag.state.Completed;
 import tc.oc.pgm.flag.state.Returned;
+import tc.oc.pgm.flag.state.Spawned;
 import tc.oc.pgm.flag.state.State;
 import tc.oc.pgm.goals.TouchableGoal;
 import tc.oc.pgm.goals.events.GoalCompleteEvent;
@@ -201,6 +203,16 @@ public class Flag extends TouchableGoal<FlagDefinition> implements Listener {
     return bannerItem;
   }
 
+  public BaseState getState() {
+    return state;
+  }
+
+  public Optional<Location> getLocation() {
+    return this.state instanceof Spawned
+        ? Optional.of(((Spawned) state).getLocation())
+        : Optional.empty();
+  }
+
   /** Owner is defined in XML, and does not change during a match */
   public @Nullable Team getOwner() {
     return owner;
@@ -300,11 +312,8 @@ public class Flag extends TouchableGoal<FlagDefinition> implements Listener {
 
   @Override
   public boolean isProximityRelevant(Competitor team) {
-    if (hasTouched(team)) {
-      return canCapture(team.getQuery());
-    } else {
-      return canPickup(team.getQuery());
-    }
+    return getProximityMetric(team) != null
+        && (hasTouched(team) ? canCapture(team.getQuery()) : canPickup(team.getQuery()));
   }
 
   // Misc
